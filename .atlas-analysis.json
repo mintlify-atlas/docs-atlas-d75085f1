@@ -1,0 +1,94 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "Flash Loan Router",
+  "projectDescription": "Smart contract infrastructure that allows CoW Protocol solvers to execute settlements with flash loan capabilities from multiple providers.",
+  "theme": "aspen",
+  "primaryColor": "#040404",
+  "lightColor": "#ffffff",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/installation",
+              "getting-started/quickstart",
+              "getting-started/deployment"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/flash-loans",
+              "concepts/router-design",
+              "concepts/borrower-adapters",
+              "concepts/security-model"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/deployment-guide",
+              "operations/verification",
+              "operations/networks",
+              "operations/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Contract Reference",
+        "groups": [
+          {
+            "group": "Core Contracts",
+            "pages": [
+              "contracts/flash-loan-router",
+              "contracts/aave-borrower",
+              "contracts/erc3156-borrower"
+            ]
+          },
+          {
+            "group": "Interfaces",
+            "pages": [
+              "contracts/interfaces/iflash-loan-router",
+              "contracts/interfaces/iborrower"
+            ]
+          },
+          {
+            "group": "Base Contracts",
+            "pages": [
+              "contracts/base/borrower"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Flash loan routing for CoW Protocol settlements",
+    "Support for multiple flash loan providers (Aave, ERC-3156)",
+    "Secure solver authentication and execution control",
+    "Deterministic cross-chain deployment with CREATE2",
+    "Modular borrower adapter architecture"
+  ],
+  "publicApiSurface": [
+    "FlashLoanRouter.flashLoanAndSettle()",
+    "FlashLoanRouter.borrowerCallBack()",
+    "AaveBorrower.flashLoanAndCallBack()",
+    "ERC3156Borrower.flashLoanAndCallBack()",
+    "Borrower.approve()",
+    "IBorrower interface",
+    "IFlashLoanRouter interface",
+    "Loan.Data struct"
+  ]
+}
