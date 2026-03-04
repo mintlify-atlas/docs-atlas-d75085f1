@@ -1,0 +1,312 @@
+---
+title: 'AaveBorrower'
+description: 'Flash loan borrower contract for Aave V3 protocol integration'
+---
+
+## Overview
+
+The `AaveBorrower` contract is a protocol-specific borrower implementation that enables the FlashLoanRouter to request flash loans from Aave V3 pools. It acts as an adapter between the router's generic interface and Aave's specific flash loan mechanism.
+
+### Key Features
+
+- **Aave V3 Integration**: Implements Aave's flash loan receiver interface
+- **Router Coordination**: Seamlessly integrates with FlashLoanRouter
+- **Zero Debt Mode**: Requests flash loans without opening debt positions
+- **Generic Borrower Base**: Inherits common borrower functionality
+
+### How It Works
+
+1. Router calls `flashLoanAndCallBack()` on this contract
+2. Contract requests flash loan from Aave pool using `flashLoan()`
+3. Aave transfers funds and calls `executeOperation()`
+4. Contract processes loan and calls back the router
+5. Flash loan is repaid during settlement execution
+
+## Constructor
+
+```solidity
+constructor(IFlashLoanRouter _router)
+```
+
+Initializes the borrower with a reference to the FlashLoanRouter.
+
+<ParamField path="_router" type="IFlashLoanRouter" required>
+  The FlashLoanRouter instance that will use this borrower contract
+</ParamField>
+
+### Inherited State Variables
+
+From the `Borrower` base contract:
+- `router`: The flash loan router (immutable)
+- `settlementContract`: The CoW Protocol settlement contract (immutable)
+
+## Core Functions
+
+### flashLoanAndCallBack
+
+```solidity
+function flashLoanAndCallBack(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) external onlyRouter
+```
+
+Inherited from `Borrower`. Initiates the flash loan request with Aave.
+
+<ParamField path="lender" type="address" required>
+  The Aave V3 Pool address to request the flash loan from
+</ParamField>
+
+<ParamField path="token" type="IERC20" required>
+  The ERC-20 token to borrow
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The amount of tokens to borrow
+</ParamField>
+
+<ParamField path="callBackData" type="bytes" required>
+  Data to pass through to the router after receiving the loan
+</ParamField>
+
+**Requirements:**
+- Can only be called by the registered router
+
+### executeOperation
+
+```solidity
+function executeOperation(
+    address[] calldata assets,
+    uint256[] calldata amounts,
+    uint256[] calldata premiums,
+    address initiator,
+    bytes calldata params
+) external returns (bool)
+```
+
+Aave's flash loan callback function. Called by the Aave pool after transferring the borrowed funds.
+
+<ParamField path="assets" type="address[]">
+  Array of borrowed asset addresses (unused in callback)
+</ParamField>
+
+<ParamField path="amounts" type="uint256[]">
+  Array of borrowed amounts (unused in callback)
+</ParamField>
+
+<ParamField path="premiums" type="uint256[]">
+  Array of flash loan fees (unused in callback)
+</ParamField>
+
+<ParamField path="initiator" type="address">
+  Address that initiated the flash loan (unused in callback)
+</ParamField>
+
+<ParamField path="params" type="bytes" required>
+  Custom data passed through from the initial flash loan request
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Always returns `true` to indicate successful execution
+</ResponseField>
+
+**Behavior:**
+- Calls internal `flashLoanCallBack()` which notifies the router
+- Router continues with settlement execution
+- Returns `true` to signal success to Aave
+
+### approve
+
+```solidity
+function approve(
+    IERC20 token,
+    address target,
+    uint256 amount
+) external onlySettlementContract
+```
+
+Inherited from `Borrower`. Allows the settlement contract to approve token spending during settlement execution.
+
+<ParamField path="token" type="IERC20" required>
+  The token to approve
+</ParamField>
+
+<ParamField path="target" type="address" required>
+  The address to approve (typically the Aave pool for repayment)
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The allowance amount (borrowed amount + fee)
+</ParamField>
+
+**Requirements:**
+- Can only be called by the settlement contract during a settlement
+
+## Internal Implementation
+
+### triggerFlashLoan
+
+```solidity
+function triggerFlashLoan(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) internal override
+```
+
+Internal function that implements Aave-specific flash loan request logic.
+
+**Implementation Details:**
+
+```solidity
+IAaveFlashLoanReceiver receiverAddress = this;
+address[] memory assets = new address[](1);
+assets[0] = address(token);
+
+uint256[] memory amounts = new uint256[](1);
+amounts[0] = amount;
+
+uint256[] memory interestRateModes = new uint256[](1);
+interestRateModes[0] = 0; // No debt position
+
+address onBehalfOf = address(this);
+bytes calldata params = callBackData;
+uint16 referralCode = 0; // No referral
+
+IAavePool(lender).flashLoan(
+    address(receiverAddress),
+    assets,
+    amounts,
+    interestRateModes,
+    onBehalfOf,
+    params,
+    referralCode
+);
+```
+
+**Key Parameters:**
+- `interestRateModes[0] = 0`: Specifies no debt position (must repay in same transaction)
+- `referralCode = 0`: Referral system currently inactive on Aave
+- `onBehalfOf = address(this)`: Loan taken on behalf of this contract
+
+## Usage Example
+
+```solidity
+// Deploy borrower (one-time setup)
+FlashLoanRouter router = FlashLoanRouter(routerAddress);
+AaveBorrower borrower = new AaveBorrower(router);
+
+// Prepare flash loan through router
+address aavePool = 0x...; // Aave V3 Pool address
+IERC20 usdc = IERC20(0x...);
+uint256 borrowAmount = 10_000e6; // 10,000 USDC
+
+Loan.Data memory loan = Loan.Data({
+    amount: borrowAmount,
+    borrower: IBorrower(address(borrower)),
+    lender: aavePool,
+    token: usdc
+});
+
+// During settlement execution, approve Aave pool for repayment
+// This happens via the borrower's approve() function:
+// borrower.approve(usdc, aavePool, borrowAmount + fee);
+```
+
+## Aave Flash Loan Flow
+
+1. **Request**: Router calls `borrower.flashLoanAndCallBack()`
+2. **Trigger**: Borrower calls `aavePool.flashLoan()`
+3. **Transfer**: Aave transfers tokens to borrower contract
+4. **Callback**: Aave calls `borrower.executeOperation()`
+5. **Notify**: Borrower calls `router.borrowerCallBack()`
+6. **Settlement**: Router executes CoW Protocol settlement
+7. **Approval**: Settlement calls `borrower.approve()` for Aave pool
+8. **Repayment**: Aave retrieves funds via `transferFrom()` from borrower
+9. **Verification**: Aave verifies repayment amount (principal + fee)
+
+## Aave V3 Integration Details
+
+### Flash Loan Parameters
+
+- **Interest Rate Mode**: Set to `0` (no debt position)
+  - Mode `0`: Flash loan must be repaid in same transaction
+  - Mode `1`: Stable debt (not used)
+  - Mode `2`: Variable debt (not used)
+
+- **Referral Code**: Set to `0` (inactive)
+  - Aave's referral program is currently not active
+
+- **Premium (Fee)**: Variable per asset
+  - Typically 0.05% - 0.09% of borrowed amount
+  - Check Aave documentation for current rates
+  - Must be included in repayment amount
+
+### Repayment Mechanism
+
+Aave uses the "pull" model:
+1. Borrowed funds transferred to borrower
+2. After callback completes, Aave calls `transferFrom()` on borrower
+3. Borrower must have approved Aave pool for `amount + premium`
+4. Settlement interactions must set up this approval
+
+## Security Considerations
+
+### Access Control
+- `flashLoanAndCallBack()`: Only callable by registered router
+- `approve()`: Only callable by settlement contract
+- `executeOperation()`: Only callable by Aave pool (validated by router flow)
+
+### Flash Loan Safety
+- **No Debt Positions**: Interest rate mode set to 0 prevents debt accumulation
+- **Same Transaction**: Loan must be repaid before transaction completes
+- **Approval Control**: Settlement controls all token approvals
+
+### Data Integrity
+- Callback data passed through without modification
+- Router validates data hash to ensure integrity
+- No state changes that could affect router logic
+
+### Aave-Specific Risks
+
+<Warning>
+  Ensure the lender address is a legitimate Aave V3 Pool contract. Using an incorrect address could result in loss of funds.
+</Warning>
+
+- **Premium Calculation**: Settlement must account for Aave's flash loan fee
+- **Asset Availability**: Requested amount must be available in Aave pool
+- **Approval Timing**: Approval for repayment must occur during settlement
+
+## Integration Checklist
+
+### For Solvers
+- [ ] Verify lender is a legitimate Aave V3 Pool contract
+- [ ] Calculate flash loan premium for the borrowed asset
+- [ ] Include approval interaction in settlement for repayment
+- [ ] Ensure settlement generates enough funds to cover loan + premium
+- [ ] Test with Aave testnet before mainnet deployment
+
+### For Settlement Construction
+```solidity
+// Include this interaction in your settlement:
+interactions[n] = Interaction({
+    target: address(borrower),
+    callData: abi.encodeCall(
+        borrower.approve,
+        (usdcToken, aavePool, borrowedAmount + premium)
+    )
+});
+```
+
+## Related Contracts
+
+- [FlashLoanRouter](/contracts/flash-loan-router) - Main router contract
+- [ERC3156Borrower](/contracts/erc3156-borrower) - Alternative borrower for ERC-3156 lenders
+
+## External References
+
+- [Aave V3 Flash Loans Documentation](https://docs.aave.com/developers/guides/flash-loans)
+- [Aave V3 Pool Contract](https://docs.aave.com/developers/core-contracts/pool)

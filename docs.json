@@ -1,122 +1,94 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Flash Loan Router",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#040404",
+    "light": "#ffffff",
+    "dark": "#040404"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/67ec1fd6-bd41-41f0-abcb-0867df829002.svg",
+  "logo": {
+    "light": "https://media.brand.dev/504d3893-c6b1-4a74-bfde-5fdb8d5998d9.svg",
+    "dark": "https://media.brand.dev/67ec1fd6-bd41-41f0-abcb-0867df829002.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/cowprotocol/flash-loan-router"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/cowprotocol/flash-loan-router"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "architecture"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Getting Started",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "getting-started/installation",
+              "getting-started/quickstart",
+              "getting-started/deployment"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "concepts/flash-loans",
+              "concepts/router-design",
+              "concepts/borrower-adapters",
+              "concepts/security-model"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Operations",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "operations/deployment-guide",
+              "operations/verification",
+              "operations/networks",
+              "operations/testing"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Contract Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Contracts",
             "pages": [
-              "api-reference/introduction"
+              "contracts/flash-loan-router",
+              "contracts/aave-borrower",
+              "contracts/erc3156-borrower"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Interfaces",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "contracts/interfaces/iflash-loan-router",
+              "contracts/interfaces/iborrower"
+            ]
+          },
+          {
+            "group": "Base Contracts",
+            "pages": [
+              "contracts/base/borrower"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

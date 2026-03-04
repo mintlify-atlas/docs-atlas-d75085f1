@@ -1,0 +1,147 @@
+---
+title: "IBorrower"
+description: "Interface for flash-loan borrower contracts that intermediate between the router and lenders"
+---
+
+## Overview
+
+The `IBorrower` interface defines the contract that acts as an intermediary between the flash-loan router and flash-loan lenders. Since different flash-loan protocols have varying callback mechanisms (different function names and parameters), each protocol requires a dedicated borrower contract implementation.
+
+## Purpose
+
+The borrower contract pattern allows the CoW Protocol flash-loan router to support multiple flash-loan protocols through a unified interface. Each borrower implementation:
+
+- Calls the protocol-specific flash-loan function on the lender
+- Receives the protocol-specific callback from the lender
+- Calls back the router for further processing
+- Manages token approvals for the settlement process
+
+## Interface Functions
+
+### flashLoanAndCallBack
+
+```solidity
+function flashLoanAndCallBack(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) external;
+```
+
+Requests a flash loan from the lender and calls back the router once funds are received.
+
+<ParamField path="lender" type="address">
+  The address of the flash-loan lender from which to borrow funds.
+</ParamField>
+
+<ParamField path="token" type="IERC20">
+  The ERC-20 token that is requested in the flash loan.
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  The amount of tokens requested from the lender.
+</ParamField>
+
+<ParamField path="callBackData" type="bytes">
+  The data to send back when calling the router once the loan is received. This data is passed through to the router's `borrowerCallBack` function.
+</ParamField>
+
+#### Process Flow
+
+1. Router calls this function on the borrower
+2. Borrower requests flash loan from the lender using protocol-specific function
+3. Lender transfers funds to borrower and triggers protocol-specific callback
+4. Borrower receives callback from lender
+5. Borrower calls router's `borrowerCallBack()` with the provided `callBackData`
+6. Flash-loan repayment occurs during the router's settlement execution
+
+### approve
+
+```solidity
+function approve(
+    IERC20 token,
+    address target,
+    uint256 amount
+) external;
+```
+
+Approves a target address to spend tokens held by the borrower contract.
+
+<ParamField path="token" type="IERC20">
+  The ERC-20 token to approve for transferring.
+</ParamField>
+
+<ParamField path="target" type="address">
+  The address that will be allowed to spend the token (typically the settlement contract).
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  The amount of tokens to set as the allowance.
+</ParamField>
+
+#### Important Notes
+
+- This is generally the only way to transfer funds out of the borrower contract
+- The approval works similarly to an ERC-20 approval
+- The allowance doesn't reset once the call is terminated (persistent approval)
+- This function enables the settlement contract to access flash-loaned funds
+
+### settlementContract
+
+```solidity
+function settlementContract() external view returns (ICowSettlement);
+```
+
+Returns the CoW Protocol settlement contract supported by this borrower.
+
+<ResponseField name="return" type="ICowSettlement">
+  The settlement contract that this borrower is configured to work with.
+</ResponseField>
+
+### router
+
+```solidity
+function router() external view returns (IFlashLoanRouter);
+```
+
+Returns the flash-loan router that manages this borrower contract.
+
+<ResponseField name="return" type="IFlashLoanRouter">
+  The router contract that will be called back once flash-loan proceeds are received. This is the only address authorized to trigger a flash loan request on this borrower.
+</ResponseField>
+
+## Implementation Requirements
+
+When implementing a borrower contract for a specific flash-loan protocol, you must:
+
+1. **Protocol Adaptation**: Implement the protocol-specific flash-loan request and callback handling
+2. **Router Callback**: Call the router's `borrowerCallBack()` function after receiving funds
+3. **Access Control**: Ensure only the router can call `flashLoanAndCallBack()`
+4. **Data Pass-Through**: Pass callback data to the router without modification
+5. **Approval Management**: Implement secure token approval mechanism
+
+## Example Protocols
+
+Different flash-loan protocols that would require separate borrower implementations:
+
+- **Aave**: Uses `flashLoan()` and expects `executeOperation()` callback
+- **Uniswap V2**: Uses `swap()` with data parameter and expects `uniswapV2Call()` callback
+- **Uniswap V3**: Uses `flash()` and expects `uniswapV3FlashCallback()` callback
+- **Balancer**: Uses `flashLoan()` and expects `receiveFlashLoan()` callback
+
+Each protocol requires a dedicated borrower contract implementation to handle its specific callback interface.
+
+## Security Considerations
+
+- Only the router should be able to call `flashLoanAndCallBack()`
+- Only the router should be able to call `approve()`
+- Callback data must be passed to the router without modification
+- The borrower contract should not hold funds between transactions
+- Approvals should be carefully managed to prevent unauthorized fund transfers
+
+## Related Interfaces
+
+- [IFlashLoanRouter](/contracts/interfaces/iflash-loan-router) - The router interface that manages borrower contracts
+- IERC20 - Standard ERC-20 token interface
+- ICowSettlement - CoW Protocol settlement contract interface

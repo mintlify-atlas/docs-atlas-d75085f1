@@ -1,0 +1,110 @@
+---
+title: "IFlashLoanRouter"
+description: "Interface for interacting with the flash-loan router as a CoW Protocol solver"
+---
+
+## Overview
+
+The `IFlashLoanRouter` interface defines the functions available for interacting with the flash-loan router. The flash loan router is designed to act as a solver for CoW Protocol, enabling solvers to request flash loans and execute settlements in a single transaction.
+
+## Key Features
+
+- **Flash Loan Coordination**: Request multiple flash loans before executing a settlement
+- **Settlement Integration**: Direct integration with CoW Protocol settlement contract
+- **Callback Mechanism**: Secure borrower callback system for flash loan processing
+- **Solver Authentication**: Built-in authentication through CoW Protocol's authenticator
+
+## Interface Functions
+
+### flashLoanAndSettle
+
+```solidity
+function flashLoanAndSettle(
+    Loan.Data[] calldata loans,
+    bytes calldata settlement
+) external;
+```
+
+Requests all specified flash loans and executes the settlement after funds are received.
+
+<ParamField path="loans" type="Loan.Data[]">
+  The list of flash loans to be requested before the settlement is executed. Loans are requested in the specified order.
+</ParamField>
+
+<ParamField path="settlement" type="bytes">
+  The ABI-encoded bytes for a call to `settle()` (as in `abi.encodeCall`).
+</ParamField>
+
+#### Important Notes
+
+- It's the solver's responsibility to ensure the loan is specified correctly
+- The router offers no validation that flash loan proceeds are available for spending
+- Flash loan repayment varies by protocol (some use `transferFrom`, others check lender balance)
+- The settlement must be built to cater to the needs of the specified lender
+- A settlement can be executed at most once per call
+- Settlement data cannot change during execution
+- Only the settle function can be called during execution
+
+### borrowerCallBack
+
+```solidity
+function borrowerCallBack(bytes calldata encodedLoansWithSettlement) external;
+```
+
+Callback function that borrowers call after receiving flash loan proceeds.
+
+<ParamField path="encodedLoansWithSettlement" type="bytes">
+  The data the borrower received when it was called, passed through without any modification.
+</ParamField>
+
+#### Usage
+
+This function is called by the borrower contract after it receives the flash loan funds from the lender. The borrower must pass the data it received without modification.
+
+### settlementContract
+
+```solidity
+function settlementContract() external view returns (ICowSettlement);
+```
+
+Returns the settlement contract supported by this router.
+
+<ResponseField name="return" type="ICowSettlement">
+  The CoW Protocol settlement contract that will be called when the settlement is executed.
+</ResponseField>
+
+### settlementAuthentication
+
+```solidity
+function settlementAuthentication() external view returns (ICowAuthentication);
+```
+
+Returns the settlement authenticator contract for CoW Protocol.
+
+<ResponseField name="return" type="ICowAuthentication">
+  The authenticator contract that determines who the solvers for CoW Protocol are.
+</ResponseField>
+
+## Workflow
+
+1. **Solver initiates**: A CoW Protocol solver calls `flashLoanAndSettle()` with loan specifications and settlement data
+2. **Loans requested**: The router requests flash loans in the specified order through borrower contracts
+3. **Funds received**: Each borrower receives flash loan funds from lenders
+4. **Callback**: Borrowers call `borrowerCallBack()` to return control to the router
+5. **Settlement execution**: The router executes the settlement with the borrowed funds
+6. **Repayment**: The settlement is structured to repay flash loans according to each lender's requirements
+
+## Security Considerations
+
+- Only authenticated CoW Protocol solvers should be able to initiate flash loans
+- Settlement data is immutable during execution to prevent manipulation
+- Each settlement can only be executed once per call
+- Borrowers must pass callback data without modification
+- The router doesn't validate loan proceeds availability - solver responsibility
+
+## Related Interfaces
+
+- [IBorrower](/contracts/interfaces/iborrower) - Interface implemented by flash loan borrower contracts
+- Loan.Data - Library structure defining flash loan parameters
+- ICowSettlement - CoW Protocol settlement contract interface
+- ICowAuthentication - CoW Protocol solver authentication interface

@@ -1,0 +1,355 @@
+---
+title: 'Borrower'
+description: 'Abstract base contract for implementing flash loan provider adapters'
+---
+
+## Overview
+
+The `Borrower` abstract contract provides a standardized base for creating flash loan provider adapters. It implements the Template Method pattern, handling common functionality like authentication, fund management, and router callbacks while delegating provider-specific flash loan logic to concrete implementations.
+
+This design makes it easy to support different flash loan providers by creating a dedicated adapter contract that extends `Borrower` and implements the provider-specific `triggerFlashLoan` method.
+
+## Purpose
+
+Each flash loan protocol has different APIs for requesting loans and receiving callbacks. The `Borrower` contract abstracts away the common logic, allowing developers to focus only on the provider-specific integration code.
+
+The contract handles:
+- Authentication via modifiers ensuring only authorized contracts can call critical functions
+- ERC-20 token approvals for fund management
+- Standardized callback flow between router and borrower
+- Immutable references to the router and settlement contracts
+
+## Contract Interface
+
+```solidity
+abstract contract Borrower is IBorrower {
+    IFlashLoanRouter public immutable router;
+    ICowSettlement public immutable settlementContract;
+
+    constructor(IFlashLoanRouter _router);
+    
+    function flashLoanAndCallBack(
+        address lender,
+        IERC20 token,
+        uint256 amount,
+        bytes calldata callBackData
+    ) external;
+    
+    function approve(
+        IERC20 token,
+        address target,
+        uint256 amount
+    ) external;
+    
+    function triggerFlashLoan(
+        address lender,
+        IERC20 token,
+        uint256 amount,
+        bytes calldata callBackData
+    ) internal virtual;
+    
+    function flashLoanCallBack(bytes calldata callBackData) internal;
+}
+```
+
+## State Variables
+
+### router
+
+```solidity
+IFlashLoanRouter public immutable router
+```
+
+The flash loan router contract that manages this borrower. This is the only address authorized to trigger flash loan requests via `flashLoanAndCallBack`.
+
+### settlementContract
+
+```solidity
+ICowSettlement public immutable settlementContract
+```
+
+The CoW Protocol settlement contract. Automatically set from the router during construction. Only this contract can call the `approve` function.
+
+## Modifiers
+
+### onlySettlementContract
+
+```solidity
+modifier onlySettlementContract()
+```
+
+Restricts function access to calls made during a CoW Protocol settlement. Reverts with "Only callable in a settlement" if the caller is not the settlement contract.
+
+### onlyRouter
+
+```solidity
+modifier onlyRouter()
+```
+
+Restricts function access to the registered flash loan router. Reverts with "Not the router" if the caller is not the router contract.
+
+## Constructor
+
+<ParamField path="_router" type="IFlashLoanRouter" required>
+  The router address that will use this contract to trigger flash loans and receive callbacks. The settlement contract reference is automatically derived from the router.
+</ParamField>
+
+```solidity
+constructor(IFlashLoanRouter _router) {
+    router = _router;
+    settlementContract = _router.settlementContract();
+}
+```
+
+## Public Functions
+
+### flashLoanAndCallBack
+
+```solidity
+function flashLoanAndCallBack(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) external onlyRouter
+```
+
+Entry point for initiating a flash loan. Called by the router to request funds from a lender. This function delegates to the internal `triggerFlashLoan` method that concrete implementations must provide.
+
+<ParamField path="lender" type="address" required>
+  The address of the flash loan provider contract to borrow from
+</ParamField>
+
+<ParamField path="token" type="IERC20" required>
+  The ERC-20 token to borrow
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The amount of tokens to borrow
+</ParamField>
+
+<ParamField path="callBackData" type="bytes" required>
+  Arbitrary data to pass through to the router callback unchanged
+</ParamField>
+
+### approve
+
+```solidity
+function approve(
+    IERC20 token,
+    address target,
+    uint256 amount
+) external onlySettlementContract
+```
+
+Approves a target address to spend tokens held by the borrower contract. This is the primary mechanism for transferring funds out of the borrower. Can only be called during a CoW Protocol settlement.
+
+<ParamField path="token" type="IERC20" required>
+  The token to approve for spending
+</ParamField>
+
+<ParamField path="target" type="address" required>
+  The address that will be allowed to spend the tokens
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The allowance amount to set
+</ParamField>
+
+## Internal Functions
+
+### triggerFlashLoan
+
+```solidity
+function triggerFlashLoan(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) internal virtual
+```
+
+Abstract method that concrete implementations must override to support specific flash loan provider logic. This method should:
+
+1. Call the provider's flash loan function with the appropriate parameters
+2. The provider will then call back into the borrower contract
+3. The borrower's callback handler should call `flashLoanCallBack` with the callback data
+
+<ParamField path="lender" type="address" required>
+  The flash loan provider contract address
+</ParamField>
+
+<ParamField path="token" type="IERC20" required>
+  The token to borrow
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The amount to borrow
+</ParamField>
+
+<ParamField path="callBackData" type="bytes" required>
+  Data to pass through the callback chain unchanged
+</ParamField>
+
+### flashLoanCallBack
+
+```solidity
+function flashLoanCallBack(bytes calldata callBackData) internal
+```
+
+Helper function to call back the router once flash loan proceeds are received. Concrete implementations should call this from their provider-specific callback handler.
+
+<ParamField path="callBackData" type="bytes" required>
+  The data received from the lender, to be forwarded to the router
+</ParamField>
+
+## Extending the Base Contract
+
+To create a new flash loan provider adapter, extend `Borrower` and implement the `triggerFlashLoan` method. You'll also need to implement the provider's callback interface.
+
+### Example: ERC-3156 Adapter
+
+```solidity
+import {Borrower, IFlashLoanRouter} from "./mixin/Borrower.sol";
+import {IERC20} from "./vendored/IERC20.sol";
+import {IERC3156FlashBorrower} from "./vendored/IERC3156FlashBorrower.sol";
+import {IERC3156FlashLender} from "./vendored/IERC3156FlashLender.sol";
+
+contract ERC3156Borrower is Borrower, IERC3156FlashBorrower {
+    bytes32 private constant ERC3156_ONFLASHLOAN_SUCCESS = 
+        keccak256("ERC3156FlashBorrower.onFlashLoan");
+
+    constructor(IFlashLoanRouter _router) Borrower(_router) {}
+
+    // Override the abstract method to call ERC-3156 flash loan
+    function triggerFlashLoan(
+        address lender,
+        IERC20 token,
+        uint256 amount,
+        bytes calldata callBackData
+    ) internal override {
+        bool success = IERC3156FlashLender(lender).flashLoan(
+            this,
+            address(token),
+            amount,
+            callBackData
+        );
+        require(success, "Flash loan was unsuccessful");
+    }
+
+    // Implement the ERC-3156 callback interface
+    function onFlashLoan(
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata callBackData
+    ) external returns (bytes32) {
+        // Use the base contract helper to call back the router
+        flashLoanCallBack(callBackData);
+        return ERC3156_ONFLASHLOAN_SUCCESS;
+    }
+}
+```
+
+### Example: Aave Adapter
+
+```solidity
+import {Borrower, IFlashLoanRouter} from "./mixin/Borrower.sol";
+import {IAaveFlashLoanReceiver} from "./vendored/IAaveFlashLoanReceiver.sol";
+import {IAavePool} from "./vendored/IAavePool.sol";
+import {IERC20} from "./vendored/IERC20.sol";
+
+contract AaveBorrower is Borrower, IAaveFlashLoanReceiver {
+    constructor(IFlashLoanRouter _router) Borrower(_router) {}
+
+    // Override to call Aave's flash loan API
+    function triggerFlashLoan(
+        address lender,
+        IERC20 token,
+        uint256 amount,
+        bytes calldata callBackData
+    ) internal override {
+        address[] memory assets = new address[](1);
+        assets[0] = address(token);
+        
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = amount;
+        
+        uint256[] memory interestRateModes = new uint256[](1);
+        interestRateModes[0] = 0; // No debt position
+        
+        IAavePool(lender).flashLoan(
+            address(this),
+            assets,
+            amounts,
+            interestRateModes,
+            address(this),
+            callBackData,
+            0 // referral code
+        );
+    }
+
+    // Implement Aave's callback interface
+    function executeOperation(
+        address[] calldata,
+        uint256[] calldata,
+        uint256[] calldata,
+        address,
+        bytes calldata callBackData
+    ) external returns (bool) {
+        // Use the base contract helper to call back the router
+        flashLoanCallBack(callBackData);
+        return true;
+    }
+}
+```
+
+## Implementation Pattern
+
+When creating a new borrower adapter, follow this pattern:
+
+<Steps>
+  <Step title="Extend Borrower">
+    Import and extend the `Borrower` abstract contract. Also implement the flash loan provider's callback interface.
+  </Step>
+  
+  <Step title="Pass router to constructor">
+    Your constructor should accept an `IFlashLoanRouter` parameter and pass it to the `Borrower` constructor.
+  </Step>
+  
+  <Step title="Implement triggerFlashLoan">
+    Override the `triggerFlashLoan` method to call your provider's specific flash loan API. Convert parameters as needed for the provider's expected format.
+  </Step>
+  
+  <Step title="Implement provider callback">
+    Implement the callback function required by your flash loan provider's interface. Inside this callback, call `flashLoanCallBack(callBackData)` to continue the callback chain to the router.
+  </Step>
+  
+  <Step title="Handle provider-specific requirements">
+    Add any provider-specific constants, error handling, or data transformations needed for your integration.
+  </Step>
+</Steps>
+
+## Security Considerations
+
+<Warning>
+  The `Borrower` contract uses immutable references and strict access control modifiers to ensure security:
+  
+  - Only the router can trigger flash loans
+  - Only the settlement contract can approve token spending
+  - All state variables are immutable after construction
+  
+  When extending this contract, maintain these security properties and do not add functions that could bypass these restrictions.
+</Warning>
+
+## Related Contracts
+
+- [IBorrower](/contracts/interfaces/iborrower) - Interface defining the borrower contract API
+- [IFlashLoanRouter](/contracts/interfaces/iflash-loan-router) - Router contract interface
+- [ERC3156Borrower](/contracts/erc3156-borrower) - ERC-3156 flash loan adapter
+- [AaveBorrower](/contracts/aave-borrower) - Aave flash loan adapter
+
+## Source Code
+
+View the source code on GitHub: [Borrower.sol](https://github.com/cowprotocol/cow-flash-loans/blob/main/src/mixin/Borrower.sol)

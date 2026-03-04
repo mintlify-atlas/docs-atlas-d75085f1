@@ -1,0 +1,388 @@
+---
+title: 'ERC3156Borrower'
+description: 'Flash loan borrower contract for ERC-3156 compliant lenders'
+---
+
+## Overview
+
+The `ERC3156Borrower` contract is a standardized borrower implementation that enables the FlashLoanRouter to request flash loans from any lender that implements the ERC-3156 flash loan standard. This provides a universal interface for flash loan providers that follow the standard.
+
+### Key Features
+
+- **Standard Compliance**: Implements ERC-3156 flash borrower interface
+- **Universal Compatibility**: Works with any ERC-3156 compliant lender
+- **Simple Integration**: Standardized callback mechanism
+- **Success Validation**: Verifies flash loan success before proceeding
+
+### Supported Lenders
+
+Any flash loan provider implementing ERC-3156, including:
+- Maker's flash mint module
+- Yield Protocol
+- Euler Finance
+- Custom ERC-3156 implementations
+
+## ERC-3156 Standard
+
+ERC-3156 defines a standardized interface for flash loans:
+- **Lender Interface**: `IERC3156FlashLender`
+  - `flashLoan()`: Initiates a flash loan
+  - `maxFlashLoan()`: Returns maximum borrowable amount
+  - `flashFee()`: Returns fee for a given amount
+
+- **Borrower Interface**: `IERC3156FlashBorrower`
+  - `onFlashLoan()`: Callback after receiving funds
+  - Must return success constant
+
+## Constructor
+
+```solidity
+constructor(IFlashLoanRouter _router)
+```
+
+Initializes the borrower with a reference to the FlashLoanRouter.
+
+<ParamField path="_router" type="IFlashLoanRouter" required>
+  The FlashLoanRouter instance that will use this borrower contract
+</ParamField>
+
+### Inherited State Variables
+
+From the `Borrower` base contract:
+- `router`: The flash loan router (immutable)
+- `settlementContract`: The CoW Protocol settlement contract (immutable)
+
+## Core Functions
+
+### flashLoanAndCallBack
+
+```solidity
+function flashLoanAndCallBack(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) external onlyRouter
+```
+
+Inherited from `Borrower`. Initiates the flash loan request with an ERC-3156 lender.
+
+<ParamField path="lender" type="address" required>
+  The ERC-3156 compliant lender address to request the flash loan from
+</ParamField>
+
+<ParamField path="token" type="IERC20" required>
+  The ERC-20 token to borrow
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The amount of tokens to borrow
+</ParamField>
+
+<ParamField path="callBackData" type="bytes" required>
+  Data to pass through to the router after receiving the loan
+</ParamField>
+
+**Requirements:**
+- Can only be called by the registered router
+- Lender must implement ERC-3156 `flashLoan()` function
+- Flash loan must complete successfully
+
+### onFlashLoan
+
+```solidity
+function onFlashLoan(
+    address initiator,
+    address token,
+    uint256 amount,
+    uint256 fee,
+    bytes calldata data
+) external returns (bytes32)
+```
+
+ERC-3156 callback function. Called by the lender after transferring the borrowed funds.
+
+<ParamField path="initiator" type="address">
+  Address that initiated the flash loan (unused in callback)
+</ParamField>
+
+<ParamField path="token" type="address">
+  Address of the borrowed token (unused in callback)
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  Amount of tokens borrowed (unused in callback)
+</ParamField>
+
+<ParamField path="fee" type="uint256">
+  Flash loan fee amount (unused in callback)
+</ParamField>
+
+<ParamField path="data" type="bytes" required>
+  Custom data passed through from the initial flash loan request
+</ParamField>
+
+<ResponseField name="return" type="bytes32">
+  Returns `keccak256("ERC3156FlashBorrower.onFlashLoan")` to indicate successful execution
+</ResponseField>
+
+**Behavior:**
+- Calls internal `flashLoanCallBack()` which notifies the router
+- Router continues with settlement execution
+- Returns ERC-3156 success constant
+
+**ERC-3156 Success Constant:**
+```solidity
+bytes32 constant ERC3156_ONFLASHLOAN_SUCCESS = 
+    keccak256("ERC3156FlashBorrower.onFlashLoan");
+```
+
+### approve
+
+```solidity
+function approve(
+    IERC20 token,
+    address target,
+    uint256 amount
+) external onlySettlementContract
+```
+
+Inherited from `Borrower`. Allows the settlement contract to approve token spending during settlement execution.
+
+<ParamField path="token" type="IERC20" required>
+  The token to approve
+</ParamField>
+
+<ParamField path="target" type="address" required>
+  The address to approve (typically the lender for repayment)
+</ParamField>
+
+<ParamField path="amount" type="uint256" required>
+  The allowance amount (borrowed amount + fee)
+</ParamField>
+
+**Requirements:**
+- Can only be called by the settlement contract during a settlement
+
+## Internal Implementation
+
+### triggerFlashLoan
+
+```solidity
+function triggerFlashLoan(
+    address lender,
+    IERC20 token,
+    uint256 amount,
+    bytes calldata callBackData
+) internal override
+```
+
+Internal function that implements ERC-3156 flash loan request logic.
+
+**Implementation:**
+
+```solidity
+bool success = IERC3156FlashLender(lender).flashLoan(
+    this,                    // receiver
+    address(token),          // token to borrow
+    amount,                  // amount to borrow
+    callBackData             // data to pass through
+);
+require(success, "Flash loan was unsuccessful");
+```
+
+**Parameters to ERC-3156 flashLoan:**
+- `receiver`: This borrower contract (will receive callback)
+- `token`: Address of token to borrow
+- `amount`: Amount to borrow
+- `data`: Arbitrary data passed to callback
+
+## Usage Example
+
+```solidity
+// Deploy borrower (one-time setup)
+FlashLoanRouter router = FlashLoanRouter(routerAddress);
+ERC3156Borrower borrower = new ERC3156Borrower(router);
+
+// Prepare flash loan through router
+address erc3156Lender = 0x...; // Any ERC-3156 compliant lender
+IERC20 dai = IERC20(0x...);
+uint256 borrowAmount = 100_000e18; // 100,000 DAI
+
+// Query flash loan fee from lender (optional)
+IERC3156FlashLender lender = IERC3156FlashLender(erc3156Lender);
+uint256 fee = lender.flashFee(address(dai), borrowAmount);
+uint256 totalRepayment = borrowAmount + fee;
+
+// Create loan request
+Loan.Data memory loan = Loan.Data({
+    amount: borrowAmount,
+    borrower: IBorrower(address(borrower)),
+    lender: erc3156Lender,
+    token: dai
+});
+
+// During settlement, approve lender for repayment
+// borrower.approve(dai, erc3156Lender, totalRepayment);
+```
+
+## ERC-3156 Flash Loan Flow
+
+1. **Request**: Router calls `borrower.flashLoanAndCallBack()`
+2. **Trigger**: Borrower calls `lender.flashLoan()`
+3. **Transfer**: Lender transfers tokens to borrower contract
+4. **Callback**: Lender calls `borrower.onFlashLoan()`
+5. **Notify**: Borrower calls `router.borrowerCallBack()`
+6. **Settlement**: Router executes CoW Protocol settlement
+7. **Approval**: Settlement calls `borrower.approve()` for lender
+8. **Repayment**: Lender retrieves funds via `transferFrom()` from borrower
+9. **Return**: Borrower returns success constant to lender
+10. **Verify**: Lender verifies repayment and returns success to borrower
+
+## ERC-3156 Integration Details
+
+### Flash Loan Parameters
+
+ERC-3156 lenders provide standardized query functions:
+
+```solidity
+IERC3156FlashLender lender = IERC3156FlashLender(lenderAddress);
+
+// Check maximum borrowable amount
+uint256 maxAmount = lender.maxFlashLoan(address(token));
+
+// Query flash loan fee
+uint256 fee = lender.flashFee(address(token), amount);
+
+// Total repayment required
+uint256 totalRepayment = amount + fee;
+```
+
+### Repayment Mechanism
+
+ERC-3156 uses the "pull" model similar to Aave:
+1. Borrower receives funds before callback
+2. Callback executes (router notified, settlement executed)
+3. Lender calls `transferFrom()` to retrieve funds
+4. Borrower must have approved lender for `amount + fee`
+5. Callback must return success constant
+
+### Success Validation
+
+The contract validates two success indicators:
+
+1. **Callback Return**: Must return `keccak256("ERC3156FlashBorrower.onFlashLoan")`
+2. **Flash Loan Result**: `flashLoan()` must return `true`
+
+If either fails, the transaction reverts.
+
+## Security Considerations
+
+### Access Control
+- `flashLoanAndCallBack()`: Only callable by registered router
+- `approve()`: Only callable by settlement contract
+- `onFlashLoan()`: Only callable by lender (validated by router flow)
+
+### Standard Compliance
+- **Success Constant**: Must return exact ERC-3156 success value
+- **Callback Signature**: Must match ERC-3156 specification
+- **Repayment Timing**: Approval must occur before callback returns
+
+### Data Integrity
+- Callback data passed through without modification
+- Router validates data hash to ensure integrity
+- No state changes that could affect router logic
+
+### ERC-3156 Specific Risks
+
+<Warning>
+  Verify the lender implements ERC-3156 correctly before using it. Non-compliant implementations may cause unexpected behavior or loss of funds.
+</Warning>
+
+- **Lender Validation**: Ensure lender address is a legitimate ERC-3156 implementation
+- **Fee Calculation**: Query `flashFee()` to determine exact repayment amount
+- **Max Amount**: Check `maxFlashLoan()` to ensure requested amount is available
+- **Approval Timing**: Settlement must approve lender before callback completes
+
+### Testing ERC-3156 Compliance
+
+```solidity
+// Verify lender implements ERC-3156
+try IERC3156FlashLender(lender).maxFlashLoan(token) returns (uint256) {
+    // Lender supports the interface
+} catch {
+    // Lender may not be ERC-3156 compliant
+}
+
+// Verify fee is reasonable
+uint256 fee = lender.flashFee(token, amount);
+require(fee < amount, "Fee exceeds borrowed amount");
+```
+
+## Integration Checklist
+
+### For Solvers
+- [ ] Verify lender implements ERC-3156 interface correctly
+- [ ] Query `flashFee()` to calculate exact repayment amount
+- [ ] Check `maxFlashLoan()` to ensure sufficient liquidity
+- [ ] Include approval interaction in settlement for repayment
+- [ ] Ensure settlement generates enough funds to cover loan + fee
+- [ ] Test with known ERC-3156 lenders (e.g., Maker, Yield)
+
+### For Settlement Construction
+
+```solidity
+// Query fee before constructing settlement
+IERC3156FlashLender lender = IERC3156FlashLender(lenderAddress);
+uint256 fee = lender.flashFee(address(token), borrowAmount);
+uint256 totalRepayment = borrowAmount + fee;
+
+// Include this interaction in your settlement:
+interactions[n] = Interaction({
+    target: address(borrower),
+    callData: abi.encodeCall(
+        borrower.approve,
+        (token, lenderAddress, totalRepayment)
+    )
+});
+```
+
+## Comparison: ERC-3156 vs. Aave
+
+| Feature | ERC-3156Borrower | AaveBorrower |
+|---------|------------------|-------------|
+| **Standard** | ERC-3156 | Aave-specific |
+| **Callback** | `onFlashLoan()` | `executeOperation()` |
+| **Return Value** | Success constant | Boolean |
+| **Compatibility** | Any ERC-3156 lender | Aave pools only |
+| **Fee Query** | Standardized | Protocol-specific |
+| **Max Amount** | Standardized | Manual check |
+| **Complexity** | Lower | Higher |
+
+## Common ERC-3156 Lenders
+
+### Maker Protocol
+- **Asset**: DAI
+- **Fee**: 0% (gas only)
+- **Max Amount**: Configured per deployment
+- **Use Case**: Large DAI flash mints
+
+### Yield Protocol
+- **Assets**: Various yield-bearing tokens
+- **Fee**: Variable
+- **Use Case**: Yield strategy optimization
+
+### Custom Implementations
+- Treasury contracts
+- Liquidity pools
+- Protocol-owned liquidity
+
+## Related Contracts
+
+- [FlashLoanRouter](/contracts/flash-loan-router) - Main router contract
+- [AaveBorrower](/contracts/aave-borrower) - Aave-specific borrower implementation
+
+## External References
+
+- [ERC-3156 Specification](https://eips.ethereum.org/EIPS/eip-3156)
+- [ERC-3156 Reference Implementation](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-3156.md)
